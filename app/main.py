@@ -2,12 +2,22 @@ import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+# Reload the app
+# uvicorn app.main:app --reload
 
-from app.llm import generate_response
+# Activating the environment
+# source .venv/Scripts/activate
+
+# Activate Ollama
+# Get-Process ollama* | Stop-Process -Force
+# ollama serve
+
+# from app.llm import generate_response -> first one using llm.py
+from app.guardrails import generate_guardrailed_response
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="LLM Guardrails Security Demo", description="A baseline LLM application using FastAPI and Ollama.", version="1.0.0")
+app = FastAPI(title="LLM Guardrails Security Demo", description="A FastAPI and Ollama application protected by NeMo Guardrails.", version="1.0.0")
 
 class ChatRequest(BaseModel):
     message: str = Field(
@@ -17,13 +27,14 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    security_decision: str
 
 @app.get("/")
 async def root():
     return {
         "message": "LLM Guardrails Security Demo",
         "status": "running",
-        "guardrails_enabled": False
+        "guardrails_enabled": True
     }
 
 @app.get("/health")
@@ -34,10 +45,17 @@ async def health_check():
 async def chat(request: ChatRequest):
 
     try:
-        response = await generate_response(request.message)
-        return ChatResponse(response=response)
-    
-    except Exception as exc:
-        logger.exception("Error while communicating with Ollama")    
-        raise HTTPException(status_code=502, detail="Unable to generate response from the language model")
+        result = await generate_guardrailed_response(request.message)
 
+        logger.info(
+            "Request processed with security decision: %s",
+            result["security_decision"]
+        )
+
+        return ChatResponse(
+            response=result["response"],
+            security_decision=result["security_decision"]
+        )
+    except Exception:
+       logger.exception("Error while processing request through NeMo")
+       raise HTTPException( status_code=502, detail="Unable to process the request.")
